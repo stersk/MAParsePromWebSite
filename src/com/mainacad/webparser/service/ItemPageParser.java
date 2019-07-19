@@ -1,0 +1,232 @@
+package com.mainacad.webparser.service;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mainacad.webparser.model.Item;
+import com.mainacad.webparser.model.ItemAviability;
+import com.mainacad.webparser.model.Seller;
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
+import org.jsoup.select.Elements;
+
+import java.io.IOException;
+import java.util.*;
+
+public class ItemPageParser {
+  public static Item parse(String url) {
+    Item item = new Item();
+
+    try {
+      Document document = Jsoup.connect(url).get();
+
+      Element mainItemElement = getMainItemElement(document);
+
+      if (mainItemElement != null) {
+        item.setCode(getItemCode(mainItemElement));
+        item.setName(getItemName(mainItemElement));
+        item.setPrice(getItemPrice(mainItemElement));
+
+        Integer priceWithoutDiscount = getItemPriceWithoutDiscount(mainItemElement);
+        item.setPriceWithoutDiscount(priceWithoutDiscount == null ? item.getPrice() : priceWithoutDiscount);
+
+        item.setWholesalePrices(getWholesalePrices(mainItemElement));
+        item.setImageUrls(getImageUrls(mainItemElement));
+        item.setItemAvailability(getItemAvailability(mainItemElement));
+        item.setHasGifts(hasGifts(mainItemElement));
+      }
+
+      Element sellerElement = getSellerElement(document);
+      
+      if (sellerElement != null) {
+        item.setSeller(getSeller(sellerElement));
+      }
+
+    } catch (IOException e) {
+      e.printStackTrace();
+    }
+
+    return item;
+  }
+
+  private static Seller getSeller(Element sellerInfoElement) {
+    Seller seller = new Seller();
+    Element sellerElement = null;
+
+    Elements sellerElements = sellerInfoElement.getElementsByAttributeValue("data-qaid", "company_name");
+    if (sellerElements != null && sellerElements.size() > 0) {
+      sellerElement = sellerElements.first();
+
+      seller.setName(sellerElement.ownText().trim());
+      String url = sellerElement.attr("href");
+      if (url != null) {
+        seller.setSiteUrl(url);
+      }
+    }
+
+    return seller;
+  }
+
+  private static Element getSellerElement(Document document) {
+    Element sellerElement = null;
+    Elements sellerElements = document.getElementsByAttributeValue("data-qaid", "company_info");
+    if (sellerElements != null && sellerElements.size() > 0) {
+      sellerElement = sellerElements.first();
+    }
+
+    return sellerElement;
+  }
+
+  private static Element getMainItemElement(Document document) {
+    Element itemElement = null;
+    Elements mainItemElements = document.getElementsByClass("x-product-page__main-content");
+    if (mainItemElements != null && mainItemElements.size() > 0) {
+      itemElement = mainItemElements.first();
+    }
+
+    return itemElement;
+  }
+
+  private static boolean hasGifts(Element mainItemElement) {
+    Elements giftsElement = mainItemElement.getElementsByAttributeValue("data-qaid", "gifts");
+    return (giftsElement != null && giftsElement.size() > 0);
+  }
+
+  private static ItemAviability getItemAvailability(Element mainItemElement) {
+    ItemAviability itemAviability = ItemAviability.UNAVAILABLE;
+
+    Elements itemAvailabilityType = mainItemElement.getElementsByAttributeValue("data-qaid", "product_presence");
+    if (itemAvailabilityType != null && itemAvailabilityType.size() > 0) {
+      if (itemAvailabilityType.first().hasClass("x-product-presence_type_ends")){
+        itemAviability = ItemAviability.ENDS;
+      } else if (itemAvailabilityType.first().hasClass("x-product-presence_type_pre-order")) {
+        itemAviability = ItemAviability.PRE_ORDER;
+      } else if (itemAvailabilityType.first().hasClass("x-product-presence_type_unavailable")) {
+        itemAviability = ItemAviability.UNAVAILABLE;
+      } else {
+        itemAviability = ItemAviability.AVAILABLE;
+      }
+    }
+
+    return itemAviability;
+  }
+
+  private static Set<String> getImageUrls(Element mainItemElement) {
+    Set<String> images = new HashSet<>();
+    String jsonData = "";
+
+    Elements imagesDataElement = mainItemElement.getElementsByAttributeValue("data-qaid", "image_block");
+    if (imagesDataElement != null && imagesDataElement.size() == 1) {
+      jsonData = imagesDataElement.first().attr("data-bazooka-props").trim();
+    }
+
+    if (!jsonData.isEmpty()) {
+      images = getImageUrlsFromJsonString(jsonData);
+    }
+
+    return images;
+  }
+
+  private static Map<Integer, Integer> getWholesalePrices(Element mainItemElement) {
+    Map<Integer, Integer> wholesalePrices = new HashMap<>();
+
+    Element pricesTable = mainItemElement.getElementById("wholesale_prices");
+    if (pricesTable!= null) {
+      Elements prices = pricesTable.getElementsByAttributeValue("data-qaid", "wholesale_prices");
+      for (Element rowElement: prices) {
+        Integer price = 0;
+        Integer fromQuantity = 0;
+
+        Elements rowElements = rowElement.getElementsByAttribute("data-qaid");
+        for (Element rowDataElement: rowElements) {
+          if (rowDataElement.attr("data-qaid").equalsIgnoreCase("wholesale-price")) {
+            String elementData = rowDataElement.text().trim().replaceAll("[^0-9]", "");
+            price = Integer.parseInt(elementData) * 100;
+          } else if (rowDataElement.attr("data-qaid").equalsIgnoreCase("wholesale-quantity")) {
+            String elementData = rowDataElement.text().trim().replaceAll("[^0-9]", "");
+            fromQuantity = Integer.parseInt(elementData);
+          }
+        }
+
+        wholesalePrices.put(fromQuantity, price);
+      }
+    }
+
+    return wholesalePrices;
+  }
+
+  private static Integer getItemPriceWithoutDiscount(Element mainItemElement) {
+    Integer price = null;
+
+    Elements skuPriceElements = mainItemElement.getElementsByAttributeValue("data-qaid", "price_without_discount");
+    if (skuPriceElements != null && skuPriceElements.size() > 0) {
+      price = (int) Double.parseDouble(skuPriceElements.first().attr("data-qaprice")) * 100;
+    }
+
+    return price;
+  }
+
+  private static Integer getItemPrice(Element mainItemElement) {
+    Integer price = null;
+
+    Elements skuPriceElements = mainItemElement.getElementsByAttributeValue("data-qaid", "product_price");
+    if (skuPriceElements != null && skuPriceElements.size() > 0) {
+      price = (int) Double.parseDouble(skuPriceElements.first().attr("data-qaprice")) * 100;
+    }
+
+    return price;
+  }
+
+  private static String getItemName(Element mainItemElement) {
+    String name = "";
+
+    Elements skuNameElements = mainItemElement.getElementsByAttributeValue("data-qaid", "product_name");
+    if (skuNameElements != null && skuNameElements.size() > 0) {
+     name = skuNameElements.first().text().trim();
+    }
+
+    return name;
+  }
+
+  private static String getItemCode(Element mainItemElement) {
+    String code = null;
+
+    Elements skuIds = mainItemElement.getElementsByAttributeValue("data-qaid", "product-sku");
+    if (skuIds != null && skuIds.size() > 0) {
+      code = skuIds.first().text().trim();
+    }
+
+    return code;
+  }
+
+  private static Set<String> getImageUrlsFromJsonString(String jsonString) {
+    Set<String> images = new HashSet<>();
+
+    ObjectMapper mapper = new ObjectMapper();
+    try {
+      JsonNode actualObj = mapper.readTree(jsonString);
+      JsonNode imagesNode = actualObj.get("images");
+      if (imagesNode.isArray() && imagesNode.size() > 0) {
+        for (JsonNode imageData : imagesNode) {
+          if (imageData.hasNonNull("image_url_640x640")) {
+            images.add(imageData.get("image_url_640x640").asText(""));
+          } else if (imageData.hasNonNull("image_url_200x200")) {
+            images.add(imageData.get("image_url_200x200").asText(""));
+          } else if (imageData.hasNonNull("image_url_640x640")) {
+            images.add(imageData.get("image_url_100x100").asText(""));
+          }
+        }
+      } else {
+        JsonNode imageNode = actualObj.get("mainImage");
+        if (imageNode.hasNonNull("url")) {
+          images.add(imageNode.get("url").asText(""));
+        }
+      }
+
+    } catch (IOException e) {
+      e.printStackTrace();
+    }
+
+    return images;
+  }
+}
