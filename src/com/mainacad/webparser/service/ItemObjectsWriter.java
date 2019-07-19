@@ -1,9 +1,7 @@
 package com.mainacad.webparser.service;
 
-import com.mainacad.webparser.model.Item;
-
-import java.util.List;
+import com.mainacad.webparser.model.ItemsList;
 
 public interface ItemObjectsWriter {
-  public void writeObjectsToFile(List<Item> itemsList, String fileName);
+  void writeObjectsToFile(ItemsList itemsList, String fileName);
 }
