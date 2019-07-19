@@ -1,10 +1,16 @@
 package com.mainacad.webparser;
 
 import com.mainacad.webparser.model.Item;
+import com.mainacad.webparser.service.ItemObjectsWriter;
+import com.mainacad.webparser.service.ItemObjectsWriterToJson;
 import com.mainacad.webparser.service.ItemPageParser;
 import com.mainacad.webparser.service.ItemsListPageParser;
 
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 
 public class ApplicationRunner {
@@ -12,12 +18,23 @@ public class ApplicationRunner {
 
 
   public static void main(String[] args) {
-//    Item item = ItemPageParser.parse("https://prom.ua/ua/p712140849-klaviatura-asus-g750.html");
-//    Item item = ItemPageParser.parse("https://prom.ua/ua/p964869451-arduino-uno-nabor.html");
-    //Item item = ItemPageParser.parse("https://prom.ua/ua/p952556215-original-klaviatura-macbook.html");
     List<String> itemsUrlList = ItemsListPageParser.parse("https://prom.ua/ua/Klaviatury-dlya-noutbukov-i-netbukov");
-    logger.info("\n" + itemsUrlList.toString());
+    List<Item> items = new CopyOnWriteArrayList<>();
 
-    //logger.info("\n" + item.toString());
+    ExecutorService executorService = Executors.newFixedThreadPool(5);
+    for (String itemUrl: itemsUrlList) {
+      ItemPageParser pageParser = new ItemPageParser(itemUrl, items);
+      executorService.submit(pageParser);
+    }
+
+    executorService.shutdown();
+    try {
+      executorService.awaitTermination(5, TimeUnit.MINUTES);
+    } catch (InterruptedException e) {
+      e.printStackTrace();
+    }
+
+    ItemObjectsWriter itemsWriter = new ItemObjectsWriterToJson();
+    itemsWriter.writeObjectsToFile(items, "files/items.json");
   }
 }

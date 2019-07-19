@@ -12,9 +12,28 @@ import org.jsoup.select.Elements;
 
 import java.io.IOException;
 import java.util.*;
+import java.util.logging.Logger;
 
-public class ItemPageParser {
-  public static Item parse(String url) {
+public class ItemPageParser implements Runnable {
+  private static Logger logger = Logger.getLogger(ItemPageParser.class.getName());
+  private String url;
+  private List<Item> itemsList;
+  private int treadId;
+  private static int treadMaximumId = 0;
+
+  public ItemPageParser() {
+    treadId = treadMaximumId++;
+  }
+
+  public ItemPageParser(String url, List<Item> itemsList) {
+    treadId = treadMaximumId++;
+    this.url = url;
+    this.itemsList = itemsList;
+
+    logger.info("Thread " + treadId + " created.");
+  }
+
+  private Item parse(String url) {
     Item item = new Item();
 
     try {
@@ -49,7 +68,7 @@ public class ItemPageParser {
     return item;
   }
 
-  private static Seller getSeller(Element sellerInfoElement) {
+  private Seller getSeller(Element sellerInfoElement) {
     Seller seller = new Seller();
     Element sellerElement = null;
 
@@ -67,7 +86,7 @@ public class ItemPageParser {
     return seller;
   }
 
-  private static Element getSellerElement(Document document) {
+  private Element getSellerElement(Document document) {
     Element sellerElement = null;
     Elements sellerElements = document.getElementsByAttributeValue("data-qaid", "company_info");
     if (sellerElements != null && sellerElements.size() > 0) {
@@ -77,7 +96,7 @@ public class ItemPageParser {
     return sellerElement;
   }
 
-  private static Element getMainItemElement(Document document) {
+  private Element getMainItemElement(Document document) {
     Element itemElement = null;
     Elements mainItemElements = document.getElementsByClass("x-product-page__main-content");
     if (mainItemElements != null && mainItemElements.size() > 0) {
@@ -87,12 +106,12 @@ public class ItemPageParser {
     return itemElement;
   }
 
-  private static boolean hasGifts(Element mainItemElement) {
+  private boolean hasGifts(Element mainItemElement) {
     Elements giftsElement = mainItemElement.getElementsByAttributeValue("data-qaid", "gifts");
     return (giftsElement != null && giftsElement.size() > 0);
   }
 
-  private static ItemAviability getItemAvailability(Element mainItemElement) {
+  private ItemAviability getItemAvailability(Element mainItemElement) {
     ItemAviability itemAviability = ItemAviability.UNAVAILABLE;
 
     Elements itemAvailabilityType = mainItemElement.getElementsByAttributeValue("data-qaid", "product_presence");
@@ -111,7 +130,7 @@ public class ItemPageParser {
     return itemAviability;
   }
 
-  private static Set<String> getImageUrls(Element mainItemElement) {
+  private Set<String> getImageUrls(Element mainItemElement) {
     Set<String> images = new HashSet<>();
     String jsonData = "";
 
@@ -127,7 +146,7 @@ public class ItemPageParser {
     return images;
   }
 
-  private static Map<Integer, Integer> getWholesalePrices(Element mainItemElement) {
+  private Map<Integer, Integer> getWholesalePrices(Element mainItemElement) {
     Map<Integer, Integer> wholesalePrices = new HashMap<>();
 
     Element pricesTable = mainItemElement.getElementById("wholesale_prices");
@@ -155,7 +174,7 @@ public class ItemPageParser {
     return wholesalePrices;
   }
 
-  private static Integer getItemPriceWithoutDiscount(Element mainItemElement) {
+  private Integer getItemPriceWithoutDiscount(Element mainItemElement) {
     Integer price = null;
 
     Elements skuPriceElements = mainItemElement.getElementsByAttributeValue("data-qaid", "price_without_discount");
@@ -166,7 +185,7 @@ public class ItemPageParser {
     return price;
   }
 
-  private static Integer getItemPrice(Element mainItemElement) {
+  private Integer getItemPrice(Element mainItemElement) {
     Integer price = null;
 
     Elements skuPriceElements = mainItemElement.getElementsByAttributeValue("data-qaid", "product_price");
@@ -177,7 +196,7 @@ public class ItemPageParser {
     return price;
   }
 
-  private static String getItemName(Element mainItemElement) {
+  private String getItemName(Element mainItemElement) {
     String name = "";
 
     Elements skuNameElements = mainItemElement.getElementsByAttributeValue("data-qaid", "product_name");
@@ -188,7 +207,7 @@ public class ItemPageParser {
     return name;
   }
 
-  private static String getItemCode(Element mainItemElement) {
+  private String getItemCode(Element mainItemElement) {
     String code = null;
 
     Elements skuIds = mainItemElement.getElementsByAttributeValue("data-qaid", "product-sku");
@@ -199,7 +218,7 @@ public class ItemPageParser {
     return code;
   }
 
-  private static Set<String> getImageUrlsFromJsonString(String jsonString) {
+  private Set<String> getImageUrlsFromJsonString(String jsonString) {
     Set<String> images = new HashSet<>();
 
     ObjectMapper mapper = new ObjectMapper();
@@ -228,5 +247,12 @@ public class ItemPageParser {
     }
 
     return images;
+  }
+
+  @Override
+  public void run() {
+    logger.info("Thread " + treadId + " started.");
+    itemsList.add(parse(url));
+    logger.info("Thread " + treadId + " finished.");
   }
 }
